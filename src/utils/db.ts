@@ -1,33 +1,151 @@
-import { User, Tool, PromoCode } from '../types';
-import GoogleSheetsDB from './GoogleSheetsDB';
+import  { User, Tool, PromoCode } from '../types';
 
-const googleDB = new GoogleSheetsDB({ sheetId: 'AKfycbwRCjxaCvN9cjhOD1GW09cgcgL1n9RJjdHNFFjf7-K_SvnN2GFb4efMNrWzeEZEyz2z' });
-
+// Database class with local storage as fallback
 class DB {
+  users: User[] = [];
+  tools: Tool[] = [];
+  promoCodes: PromoCode[] = [];
   currentUser: User | null = null;
+  
+  constructor() {
+    this.loadFromLocalStorage();
+    
+    // Initialize with default data if needed
+    this.initializeDefaultData();
+    
+    this.saveToLocalStorage();
+  }
+  
+  initializeDefaultData() {
+    // Add default admin if none exists
+    if (!this.users.some(user => user.role === 'Admin')) {
+      this.users.push({
+        id: 'admin-1',
+        username: 'admin',
+        email: 'admin@eprojects.com',
+        password: 'admin123',
+        role: 'Admin',
+        proDaysLeft: 9999,
+        createdAt: new Date().toISOString()
+      });
+    }
 
-  // Usuários
-  async register(username: string, email: string, password: string, promoCode?: string): Promise<{ success: boolean; message: string }> {
-    const users = await googleDB.fetchData('users');
-    if (users.some((u: User) => u.email === email)) {
+    // Add default tools if none exist
+    if (this.tools.length === 0) {
+      this.tools.push(
+        {
+          id: 'tool-1',
+          category: 'Mecânica',
+          description: 'Calculadora Mecânica',
+          link: '/calculadora-mecanica',
+          accessLevel: 'Basic',
+          isExternal: false,
+          createdAt: new Date().toISOString()
+        },
+        {
+          id: 'tool-2',
+          category: 'Elétrica',
+          description: 'Calculadora Elétrica',
+          link: '/calculadora-eletrica',
+          accessLevel: 'Basic',
+          isExternal: false,
+          createdAt: new Date().toISOString()
+        },
+        {
+          id: 'tool-3',
+          category: 'Mecânica',
+          description: 'Conversão de Unidades',
+          link: 'https://www.convertworld.com/pt/massa/',
+          accessLevel: 'Basic',
+          isExternal: true,
+          createdAt: new Date().toISOString()
+        },
+        {
+          id: 'tool-4',
+          category: 'Elétrica',
+          description: 'Calculadora de Resistências',
+          link: 'https://www.digikey.com/pt/resources/conversion-calculators/conversion-calculator-resistor-color-code',
+          accessLevel: 'Basic',
+          isExternal: true,
+          createdAt: new Date().toISOString()
+        },
+        {
+          id: 'tool-5',
+          category: 'Mecânica',
+          description: 'Análise de Tensão Avançada',
+          link: '/pro/analise-tensao',
+          accessLevel: 'Pro',
+          isExternal: false,
+          createdAt: new Date().toISOString()
+        },
+        {
+          id: 'tool-6',
+          category: 'Elétrica',
+          description: 'Simulador de Circuitos Pro',
+          link: 'https://www.falstad.com/circuit/',
+          accessLevel: 'Pro',
+          isExternal: true,
+          createdAt: new Date().toISOString()
+        }
+      );
+    }
+  }
+
+  loadFromLocalStorage() {
+    try {
+      const usersData = localStorage.getItem('eprojects_users');
+      const toolsData = localStorage.getItem('eprojects_tools');
+      const promoCodesData = localStorage.getItem('eprojects_promoCodes');
+      const currentUserData = localStorage.getItem('eprojects_currentUser');
+
+      if (usersData) this.users = JSON.parse(usersData);
+      if (toolsData) this.tools = JSON.parse(toolsData);
+      if (promoCodesData) this.promoCodes = JSON.parse(promoCodesData);
+      if (currentUserData) this.currentUser = JSON.parse(currentUserData);
+    } catch (error) {
+      console.error('Error loading from localStorage:', error);
+    }
+  }
+
+  saveToLocalStorage() {
+    try {
+      localStorage.setItem('eprojects_users', JSON.stringify(this.users));
+      localStorage.setItem('eprojects_tools', JSON.stringify(this.tools));
+      localStorage.setItem('eprojects_promoCodes', JSON.stringify(this.promoCodes));
+      if (this.currentUser) {
+        localStorage.setItem('eprojects_currentUser', JSON.stringify(this.currentUser));
+      } else {
+        localStorage.removeItem('eprojects_currentUser');
+      }
+    } catch (error) {
+      console.error('Error saving to localStorage:', error);
+    }
+  }
+
+  // User methods
+  register(username: string, email: string, password: string, promoCode?: string): { success: boolean; message: string } {
+    if (this.users.some(user => user.email === email)) {
       return { success: false, message: 'Email já está em uso.' };
     }
 
     let role: 'Basic' | 'Pro' | 'Admin' = 'Basic';
     let proDaysLeft = 0;
 
+    // Check if promo code is the admin code
     if (promoCode === 'ELIDIOFODA') {
       role = 'Admin';
       proDaysLeft = 9999;
     } else if (promoCode) {
-      const codes: PromoCode[] = await googleDB.fetchData('promoCodes');
-      const promo = codes.find(p => p.code === promoCode && Number(p.usesLeft) > 0);
+      // Check if promo code is valid for Pro access
+      const promo = this.promoCodes.find(p => p.code === promoCode && p.usesLeft > 0);
       if (promo) {
         role = 'Pro';
-        proDaysLeft = Number(promo.daysGranted);
-        promo.usesLeft = Number(promo.usesLeft) - 1;
-        await googleDB.updateRow('promoCodes', promo.id, { usesLeft: promo.usesLeft });
-      } else {
+        proDaysLeft = promo.daysGranted;
+        
+        // Decrease uses left
+        promo.usesLeft--;
+        this.saveToLocalStorage();
+      } else if (promoCode) {
         return { success: false, message: 'Código promocional inválido ou expirado.' };
       }
     }
@@ -42,93 +160,148 @@ class DB {
       createdAt: new Date().toISOString()
     };
 
-    await googleDB.insertRow('users', newUser);
+    this.users.push(newUser);
+    this.saveToLocalStorage();
+    
     return { success: true, message: 'Conta criada com sucesso!' };
   }
 
-  async login(email: string, password: string): Promise<{ success: boolean; message: string }> {
-    const users: User[] = await googleDB.fetchData('users');
-    const user = users.find(u => u.email === email && u.password === password);
-    if (!user) return { success: false, message: 'Email ou senha incorretos.' };
+  login(email: string, password: string): { success: boolean; message: string } {
+    const user = this.users.find(u => u.email === email && u.password === password);
+    
+    if (!user) {
+      return { success: false, message: 'Email ou senha incorretos.' };
+    }
+
     this.currentUser = user;
+    this.saveToLocalStorage();
     return { success: true, message: 'Login realizado com sucesso!' };
   }
 
   logout() {
     this.currentUser = null;
+    localStorage.removeItem('eprojects_currentUser');
   }
 
-  async getAllUsers(): Promise<User[]> {
-    if (!this.isCurrentUserAdmin()) return [];
-    return await googleDB.fetchData('users');
+  getCurrentUser(): User | null {
+    return this.currentUser;
+  }
+
+  getAllUsers(): User[] {
+    return this.isCurrentUserAdmin() ? this.users : [];
   }
 
   async updateUser(id: string, updates: Partial<User>): Promise<{ success: boolean; message: string }> {
-    if (!this.isCurrentUserAdmin()) return { success: false, message: 'Sem permissão.' };
-    await googleDB.updateRow('users', id, updates);
+    if (!this.isCurrentUserAdmin()) {
+      return { success: false, message: 'Permissão negada.' };
+    }
+
+    const index = this.users.findIndex(u => u.id === id);
+    if (index === -1) {
+      return { success: false, message: 'Usuário não encontrado.' };
+    }
+
+    this.users[index] = { ...this.users[index], ...updates };
+    this.saveToLocalStorage();
+    
+    // If updated user is current user, update currentUser as well
+    if (this.currentUser && this.currentUser.id === id) {
+      this.currentUser = this.users[index];
+    }
+    
     return { success: true, message: 'Usuário atualizado com sucesso.' };
   }
 
   async deleteUser(id: string): Promise<{ success: boolean; message: string }> {
-    if (!this.isCurrentUserAdmin()) return { success: false, message: 'Sem permissão.' };
-    await googleDB.deleteRow('users', id);
+    if (!this.isCurrentUserAdmin()) {
+      return { success: false, message: 'Permissão negada.' };
+    }
+
+    const index = this.users.findIndex(u => u.id === id);
+    if (index === -1) {
+      return { success: false, message: 'Usuário não encontrado.' };
+    }
+
+    this.users.splice(index, 1);
+    this.saveToLocalStorage();
+    
     return { success: true, message: 'Usuário excluído com sucesso.' };
   }
 
-  // Ferramentas
-  async getAllTools(): Promise<Tool[]> {
+  // Tool methods
+  getAllTools(): Tool[] {
     if (!this.currentUser) return [];
-    const tools: Tool[] = await googleDB.fetchData('tools');
-    return this.currentUser.role === 'Basic'
-      ? tools.filter(t => t.accessLevel === 'Basic')
-      : tools;
+    
+    if (this.currentUser.role === 'Basic') {
+      return this.tools.filter(tool => tool.accessLevel === 'Basic');
+    }
+    
+    return this.tools;
   }
 
-  async getFilteredTools(category: string): Promise<Tool[]> {
-    const all = await this.getAllTools();
-    return all.filter(t => t.category === category);
+  getFilteredTools(category: string): Tool[] {
+    return this.getAllTools().filter(tool => tool.category === category);
   }
 
   async addTool(tool: Omit<Tool, 'id' | 'createdAt'>): Promise<{ success: boolean; message: string }> {
-    if (!this.isCurrentUserAdmin()) return { success: false, message: 'Sem permissão.' };
+    if (!this.isCurrentUserAdmin()) {
+      return { success: false, message: 'Permissão negada.' };
+    }
+
     const newTool: Tool = {
       ...tool,
       id: `tool-${Date.now()}`,
       createdAt: new Date().toISOString()
     };
-    await googleDB.insertRow('tools', newTool);
+
+    this.tools.push(newTool);
+    this.saveToLocalStorage();
+    
     return { success: true, message: 'Ferramenta adicionada com sucesso.' };
   }
 
   async updateTool(id: string, updates: Partial<Tool>): Promise<{ success: boolean; message: string }> {
-    if (!this.isCurrentUserAdmin()) return { success: false, message: 'Sem permissão.' };
-    await googleDB.updateRow('tools', id, updates);
+    if (!this.isCurrentUserAdmin()) {
+      return { success: false, message: 'Permissão negada.' };
+    }
+
+    const index = this.tools.findIndex(t => t.id === id);
+    if (index === -1) {
+      return { success: false, message: 'Ferramenta não encontrada.' };
+    }
+
+    this.tools[index] = { ...this.tools[index], ...updates };
+    this.saveToLocalStorage();
+    
     return { success: true, message: 'Ferramenta atualizada com sucesso.' };
   }
 
   async deleteTool(id: string): Promise<{ success: boolean; message: string }> {
-    if (!this.isCurrentUserAdmin()) return { success: false, message: 'Sem permissão.' };
-    await googleDB.deleteRow('tools', id);
+    if (!this.isCurrentUserAdmin()) {
+      return { success: false, message: 'Permissão negada.' };
+    }
+
+    const index = this.tools.findIndex(t => t.id === id);
+    if (index === -1) {
+      return { success: false, message: 'Ferramenta não encontrada.' };
+    }
+
+    this.tools.splice(index, 1);
+    this.saveToLocalStorage();
+    
     return { success: true, message: 'Ferramenta excluída com sucesso.' };
   }
 
-  async searchTools(term: string): Promise<Tool[]> {
-    const tools = await this.getAllTools();
-    if (!term) return tools;
-    const t = term.toLowerCase();
-    return tools.filter(tool =>
-      tool.description.toLowerCase().includes(t) ||
-      tool.category.toLowerCase().includes(t) ||
-      tool.link.toLowerCase().includes(t)
-    );
-  }
-
-  // Códigos promocionais
+  // Promo code methods
   async createPromoCode(daysGranted: number, totalUses: number): Promise<{ success: boolean; message: string; code?: string }> {
-    if (!this.isCurrentUserAdmin()) return { success: false, message: 'Sem permissão.' };
+    if (!this.isCurrentUserAdmin()) {
+      return { success: false, message: 'Permissão negada.' };
+    }
 
+    // Generate a random code
     const code = 'PRO' + Math.random().toString(36).substring(2, 10).toUpperCase();
-    const newPromo: PromoCode = {
+    
+    const newPromoCode: PromoCode = {
       id: `promo-${Date.now()}`,
       code,
       daysGranted,
@@ -137,42 +310,67 @@ class DB {
       createdAt: new Date().toISOString()
     };
 
-    await googleDB.insertRow('promoCodes', newPromo);
-    return { success: true, message: 'Código criado com sucesso.', code };
+    this.promoCodes.push(newPromoCode);
+    this.saveToLocalStorage();
+    
+    return { success: true, message: 'Código promocional criado com sucesso.', code };
   }
 
-  async getAllPromoCodes(): Promise<PromoCode[]> {
-    if (!this.isCurrentUserAdmin()) return [];
-    return await googleDB.fetchData('promoCodes');
+  getAllPromoCodes(): PromoCode[] {
+    return this.isCurrentUserAdmin() ? this.promoCodes : [];
   }
 
   async deletePromoCode(id: string): Promise<{ success: boolean; message: string }> {
-    if (!this.isCurrentUserAdmin()) return { success: false, message: 'Sem permissão.' };
-    await googleDB.deleteRow('promoCodes', id);
-    return { success: true, message: 'Código excluído com sucesso.' };
+    if (!this.isCurrentUserAdmin()) {
+      return { success: false, message: 'Permissão negada.' };
+    }
+
+    const index = this.promoCodes.findIndex(p => p.id === id);
+    if (index === -1) {
+      return { success: false, message: 'Código promocional não encontrado.' };
+    }
+
+    this.promoCodes.splice(index, 1);
+    this.saveToLocalStorage();
+    
+    return { success: true, message: 'Código promocional excluído com sucesso.' };
   }
 
-  async searchUsers(term: string): Promise<User[]> {
-    if (!this.isCurrentUserAdmin()) return [];
-    const users = await this.getAllUsers();
-    if (!term) return users;
-    const t = term.toLowerCase();
-    return users.filter(u =>
-      u.username.toLowerCase().includes(t) ||
-      u.email.toLowerCase().includes(t) ||
-      u.role.toLowerCase().includes(t)
+  // Search methods
+  searchTools(searchTerm: string): Tool[] {
+    if (!searchTerm) return this.getAllTools();
+    
+    const term = searchTerm.toLowerCase();
+    return this.getAllTools().filter(tool => 
+      tool.description.toLowerCase().includes(term) || 
+      tool.category.toLowerCase().includes(term) ||
+      tool.link.toLowerCase().includes(term)
     );
   }
 
-  // Permissões
+  searchUsers(searchTerm: string): User[] {
+    if (!this.isCurrentUserAdmin()) return [];
+    if (!searchTerm) return this.users;
+    
+    const term = searchTerm.toLowerCase();
+    return this.users.filter(user => 
+      user.username.toLowerCase().includes(term) || 
+      user.email.toLowerCase().includes(term) ||
+      user.role.toLowerCase().includes(term)
+    );
+  }
+
+  // Helper methods
   isCurrentUserAdmin(): boolean {
-    return this.currentUser?.role === 'Admin';
+    return !!this.currentUser && this.currentUser.role === 'Admin';
   }
 
   isCurrentUserPro(): boolean {
-    return this.currentUser?.role === 'Pro' || this.currentUser?.role === 'Admin';
+    return !!this.currentUser && (this.currentUser.role === 'Pro' || this.currentUser.role === 'Admin');
   }
 }
 
+// Singleton instance
 const db = new DB();
 export default db;
+ 
