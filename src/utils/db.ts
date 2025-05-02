@@ -1,11 +1,11 @@
 import  { User, Tool, PromoCode } from '../types';
 
-// Database class with local storage as fallback
+// Database class with local storage
 class DB {
-  users: User[] = [];
-  tools: Tool[] = [];
-  promoCodes: PromoCode[] = [];
-  currentUser: User | null = null;
+  private users: User[] = [];
+  private tools: Tool[] = [];
+  private promoCodes: PromoCode[] = [];
+  private currentUser: User | null = null;
   
   constructor() {
     this.loadFromLocalStorage();
@@ -16,7 +16,7 @@ class DB {
     this.saveToLocalStorage();
   }
   
-  initializeDefaultData() {
+  private initializeDefaultData() {
     // Add default admin if none exists
     if (!this.users.some(user => user.role === 'Admin')) {
       this.users.push({
@@ -91,7 +91,7 @@ class DB {
     }
   }
 
-  loadFromLocalStorage() {
+  private loadFromLocalStorage() {
     try {
       const usersData = localStorage.getItem('eprojects_users');
       const toolsData = localStorage.getItem('eprojects_tools');
@@ -107,7 +107,7 @@ class DB {
     }
   }
 
-  saveToLocalStorage() {
+  private saveToLocalStorage() {
     try {
       localStorage.setItem('eprojects_users', JSON.stringify(this.users));
       localStorage.setItem('eprojects_tools', JSON.stringify(this.tools));
